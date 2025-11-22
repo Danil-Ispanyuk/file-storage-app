@@ -1,20 +1,51 @@
-function HomePage() {
+import { auth, signOut } from "@/lib/auth";
+import { isUser2FAEnabled } from "@/lib/totpService";
+import { redirect } from "next/navigation";
+import { FileUpload } from "@/components/FileUpload";
+import { FileListClient } from "@/components/FileListClient";
+
+export default async function HomePage() {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/auth/login");
+  }
+
+  // Check if 2FA is enabled (mandatory after registration)
+  try {
+    const has2FAEnabled = await isUser2FAEnabled(session.user.id);
+    if (!has2FAEnabled) {
+      redirect("/settings/2fa?setup=true&mandatory=true");
+    }
+  } catch (error) {
+    // If error checking 2FA, redirect to setup (safer default)
+    console.error("Error checking 2FA status:", error);
+    redirect("/settings/2fa?setup=true&mandatory=true");
+  }
+
   return (
-    <main className="bg-background text-foreground flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-12">
-      <div className="flex max-w-2xl flex-col items-center gap-4 text-center">
-        <span className="border-primary text-primary rounded-full border border-dashed px-3 py-1 text-sm font-medium tracking-wider uppercase">
-          file-storage-app
-        </span>
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          Secure file storage MVP
-        </h1>
-        <p className="text-muted-foreground text-base text-balance sm:text-lg">
-          Далі реалізуємо аутентифікацію, двофакторний захист і обмін файлами на
-          основі Next.js 15, Shadcn UI та React Query.
-        </p>
-      </div>
+    <main className="bg-background text-foreground mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-6 py-12">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">My Files</h1>
+        <form
+          action={async () => {
+            "use server";
+            // signOut redirects to /api/auth/signout which will log the event
+            await signOut();
+          }}
+        >
+          <button
+            type="submit"
+            className="border-border hover:bg-accent rounded-md border px-3 py-2 text-sm font-medium"
+          >
+            Sign out
+          </button>
+        </form>
+      </header>
+
+      <section className="space-y-6">
+        <FileUpload />
+        <FileListClient />
+      </section>
     </main>
   );
 }
-
-export default HomePage;

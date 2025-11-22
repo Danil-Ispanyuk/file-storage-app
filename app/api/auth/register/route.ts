@@ -1,10 +1,49 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
+import { logAuthEvent, logRateLimitExceeded } from "@/lib/auditLog";
 import { hashPassword } from "@/lib/passwordManager";
+import {
+  checkRateLimit,
+  getClientIP,
+  registerRateLimit,
+} from "@/lib/rateLimit";
 import { prismaClient } from "@/lib/prismaClient";
 import { registerUserSchema } from "@/types/auth";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Rate limiting: max 3 registrations per hour per IP
+  const clientIP = getClientIP(request);
+  const rateLimitResult = await checkRateLimit(registerRateLimit, clientIP);
+
+  if (!rateLimitResult.success) {
+    // Log rate limit exceeded
+    await logRateLimitExceeded(request, "/api/auth/register", clientIP);
+
+    const resetTime = rateLimitResult.reset
+      ? new Date(rateLimitResult.reset).toISOString()
+      : "soon";
+    return NextResponse.json(
+      {
+        message: `Too many registration attempts. Please try again after ${resetTime}.`,
+        rateLimitExceeded: true,
+        reset: rateLimitResult.reset,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimitResult.reset
+            ? String(Math.ceil((rateLimitResult.reset - Date.now()) / 1000))
+            : "3600",
+          "X-RateLimit-Limit": String(rateLimitResult.limit ?? 3),
+          "X-RateLimit-Remaining": String(rateLimitResult.remaining ?? 0),
+          "X-RateLimit-Reset": String(
+            rateLimitResult.reset ?? Date.now() + 3600000,
+          ),
+        },
+      },
+    );
+  }
+
   const body = await request.json();
   const parseResult = registerUserSchema.safeParse(body);
 
@@ -45,6 +84,12 @@ export async function POST(request: Request) {
       role: true,
       createdAt: true,
     },
+  });
+
+  // Log successful registration
+  await logAuthEvent("REGISTER", true, request, createdUser.id, {
+    email: createdUser.email,
+    name: createdUser.name,
   });
 
   return NextResponse.json(

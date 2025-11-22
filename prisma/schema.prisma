@@ -10,7 +10,9 @@ datasource db {
 
 enum Role {
   ADMIN
+  MANAGER
   USER
+  GUEST
 }
 
 model User {
@@ -24,8 +26,11 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts Account[]
-  sessions Session[]
+  accounts     Account[]
+  sessions     Session[]
+  secondFactor SecondFactor?
+  auditLogs    AuditLog[]
+  files        File[]
 }
 
 model Account {
@@ -67,5 +72,103 @@ model VerificationToken {
   createdAt  DateTime @default(now())
 
   @@unique([identifier, token])
+}
+
+enum SecondFactorType {
+  TOTP
+  WEBAUTHN
+}
+
+model SecondFactor {
+  id            String           @id @default(cuid())
+  userId        String           @unique
+  type          SecondFactorType @default(TOTP)
+  // Encrypted TOTP secret (AES-256-GCM encrypted)
+  secret        String?          @db.Text
+  // Backup codes stored as hashed values (bcrypt)
+  backupCodes   String[]         @default([])
+  // Whether 2FA is enabled and verified
+  enabled       Boolean          @default(false)
+  // Whether setup is in progress (user generated QR but hasn't verified yet)
+  setupComplete Boolean          @default(false)
+  // Last successful verification timestamp (for rate limiting)
+  lastVerifiedAt DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum AuditAction {
+  // Authentication events
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  REGISTER
+  // 2FA events
+  TWO_FACTOR_SETUP
+  TWO_FACTOR_VERIFY_SUCCESS
+  TWO_FACTOR_VERIFY_FAILED
+  TWO_FACTOR_DISABLED
+  BACKUP_CODE_USED
+  // Authorization events
+  ROLE_CHANGED
+  PERMISSION_GRANTED
+  PERMISSION_REVOKED
+  // File operations (for future use)
+  FILE_UPLOADED
+  FILE_DOWNLOADED
+  FILE_DELETED
+  FILE_SHARED
+  // Administrative events
+  USER_CREATED
+  USER_DELETED
+  USER_BLOCKED
+  USER_UNBLOCKED
+  POLICY_CHANGED
+  // System events
+  RATE_LIMIT_EXCEEDED
+  SUSPICIOUS_ACTIVITY
+}
+
+model File {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  path          String   // Path in local storage
+  size          Int      // Size in bytes
+  mimeType      String
+  hash          String   // SHA-256 hash for integrity verification
+  encrypted     Boolean  @default(true)
+  encryptionKey String   @db.Text // Encrypted file encryption key
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String?     // Nullable for system events or unauthenticated actions
+  action    AuditAction
+  success   Boolean     @default(true) // Whether the action succeeded
+  ipAddress String?     // IP address of the client
+  userAgent String?     // User agent string
+  metadata  String?     @db.Text // Additional JSON metadata (error messages, details)
+  createdAt DateTime    @default(now())
+
+  // Optional relation to user (for easier queries)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
 }
 
