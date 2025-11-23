@@ -9,6 +9,7 @@ import {
 } from "@/lib/rateLimit";
 import { prismaClient } from "@/lib/prismaClient";
 import { registerUserSchema } from "@/types/auth";
+import { authAttemptsTotal } from "@/lib/metrics";
 
 export async function POST(request: NextRequest) {
   // Rate limiting: max 3 registrations per hour per IP
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (existingUser) {
+    authAttemptsTotal.inc({ type: "register", success: "false" });
     return NextResponse.json(
       { message: "User with this email already exists." },
       { status: 409 },
@@ -85,6 +87,9 @@ export async function POST(request: NextRequest) {
       createdAt: true,
     },
   });
+
+  // Record metrics
+  authAttemptsTotal.inc({ type: "register", success: "true" });
 
   // Log successful registration
   await logAuthEvent("REGISTER", true, request, createdUser.id, {

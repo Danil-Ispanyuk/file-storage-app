@@ -15,6 +15,7 @@ import {
 } from "@/lib/rateLimit";
 import { prismaClient } from "@/lib/prismaClient";
 import { isValidTotpFormat, verifyTotpToken } from "@/lib/totp";
+import { twoFactorVerificationsTotal } from "@/lib/metrics";
 
 /**
  * POST /api/auth/2fa/verify
@@ -128,6 +129,10 @@ export async function POST(request: NextRequest) {
           });
 
           // Log backup code usage
+          twoFactorVerificationsTotal.inc({
+            success: "true",
+            method: "backup_code",
+          });
           await log2FAEvent("BACKUP_CODE_USED", true, request, userId, {
             codeType: "backup",
           });
@@ -149,6 +154,7 @@ export async function POST(request: NextRequest) {
 
         if (!isValid) {
           // Log failed 2FA verification
+          twoFactorVerificationsTotal.inc({ success: "false", method: "totp" });
           await log2FAEvent(
             "TWO_FACTOR_VERIFY_FAILED",
             false,
@@ -172,6 +178,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Log successful 2FA verification
+        twoFactorVerificationsTotal.inc({ success: "true", method: "totp" });
         await log2FAEvent("TWO_FACTOR_VERIFY_SUCCESS", true, request, userId, {
           codeType: "totp",
         });
@@ -222,6 +229,7 @@ export async function POST(request: NextRequest) {
 
     if (!isValid) {
       // Log failed 2FA setup verification
+      twoFactorVerificationsTotal.inc({ success: "false", method: "totp" });
       await log2FAEvent("TWO_FACTOR_VERIFY_FAILED", false, request, userId, {
         codeType: "totp",
         context: "setup",

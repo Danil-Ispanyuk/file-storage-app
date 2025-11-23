@@ -4,6 +4,7 @@ import { logAuthEvent } from "@/lib/auditLog";
 import { verifyPassword } from "@/lib/passwordManager";
 import { checkRateLimit, getClientIP, loginRateLimit } from "@/lib/rateLimit";
 import { prismaClient } from "@/lib/prismaClient";
+import { authAttemptsTotal } from "@/lib/metrics";
 
 /**
  * POST /api/auth/check-credentials
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
 
     if (!user?.password) {
       // Log failed login attempt
+      authAttemptsTotal.inc({ type: "login", success: "false" });
       await logAuthEvent("LOGIN_FAILED", false, request, null, {
         email,
         error: "User not found",
@@ -84,6 +86,7 @@ export async function POST(request: NextRequest) {
 
     if (!isPasswordValid) {
       // Log failed login attempt
+      authAttemptsTotal.inc({ type: "login", success: "false" });
       await logAuthEvent("LOGIN_FAILED", false, request, user.id, {
         email,
         error: "Invalid password",
@@ -100,6 +103,7 @@ export async function POST(request: NextRequest) {
     // Log successful password verification (but not full login yet if 2FA is required)
     if (!has2FAEnabled) {
       // If no 2FA, this is a successful login
+      authAttemptsTotal.inc({ type: "login", success: "true" });
       await logAuthEvent("LOGIN_SUCCESS", true, request, user.id, {
         email,
       });

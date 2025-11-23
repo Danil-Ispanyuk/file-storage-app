@@ -15,9 +15,14 @@ type File = {
 type FileListProps = {
   onDownload: (id: string) => void;
   onDelete: (id: string) => void;
+  downloadingFileId?: string | null;
 };
 
-export function FileList({ onDownload, onDelete }: FileListProps) {
+export function FileList({
+  onDownload,
+  onDelete,
+  downloadingFileId,
+}: FileListProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -122,6 +127,7 @@ export function FileList({ onDownload, onDelete }: FileListProps) {
             file={file}
             onDownload={onDownload}
             onDelete={onDelete}
+            isDownloading={downloadingFileId === file.id}
           />
         ))}
       </div>

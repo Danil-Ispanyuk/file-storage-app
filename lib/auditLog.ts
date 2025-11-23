@@ -134,7 +134,7 @@ export async function getAuditLogsByAction(
  * Log file operations
  */
 export async function logFileEvent(
-  action: "FILE_UPLOADED" | "FILE_DOWNLOADED" | "FILE_DELETED" | "FILE_SHARED",
+  action: AuditAction,
   success: boolean,
   request: Request,
   userId: string | null,

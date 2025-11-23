@@ -1,0 +1,29 @@
+# Development Dockerfile для Next.js додатку
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Встановити залежності для Prisma
+RUN apk add --no-cache libc6-compat openssl
+
+# Копіювати файли залежностей
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma/
+
+# Встановити залежності
+RUN npm ci
+
+# Генерувати Prisma Client
+RUN npx prisma generate
+
+# Копіювати вихідний код (буде перезаписано volume в docker-compose)
+COPY . .
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["npm", "run", "dev"]
+

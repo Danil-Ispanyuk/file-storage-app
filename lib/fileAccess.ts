@@ -1,4 +1,5 @@
 import { prismaClient } from "@/lib/prismaClient";
+import { checkSharePermission } from "@/lib/fileSharing";
 
 /**
  * Check if user can view a file
@@ -20,7 +21,13 @@ export async function canViewFile(
   }
 
   // User can view their own files
-  return file.userId === userId;
+  if (file.userId === userId) {
+    return true;
+  }
+
+  // Check if file is shared with user
+  const sharePermission = await checkSharePermission(userId, fileId);
+  return sharePermission !== null;
 }
 
 /**
@@ -33,6 +40,15 @@ export async function canDeleteFile(
   userId: string,
   fileId: string,
 ): Promise<boolean> {
-  // For MVP, same as view permission
-  return canViewFile(userId, fileId);
+  const file = await prismaClient.file.findUnique({
+    where: { id: fileId },
+    select: { userId: true },
+  });
+
+  if (!file) {
+    return false;
+  }
+
+  // Only owner can delete files (not shared users, even with READ_WRITE)
+  return file.userId === userId;
 }

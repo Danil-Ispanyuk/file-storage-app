@@ -2,7 +2,8 @@ import { auth, signOut } from "@/lib/auth";
 import { isUser2FAEnabled } from "@/lib/totpService";
 import { redirect } from "next/navigation";
 import { FileUpload } from "@/components/FileUpload";
-import { FileListClient } from "@/components/FileListClient";
+import { FileListWithTabsClient } from "@/components/FileListWithTabsClient";
+import { StorageQuota } from "@/components/StorageQuota";
 
 export default async function HomePage() {
   const session = await auth();
@@ -43,8 +44,9 @@ export default async function HomePage() {
       </header>
 
       <section className="space-y-6">
+        <StorageQuota />
         <FileUpload />
-        <FileListClient />
+        <FileListWithTabsClient />
       </section>
     </main>
   );

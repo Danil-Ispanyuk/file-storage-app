@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuthenticatedUser } from "@/lib/authGuard";
 import { canViewFile } from "@/lib/fileAccess";
+import { checkSharePermission } from "@/lib/fileSharing";
 import { logFileEvent } from "@/lib/auditLog";
 import { prismaClient } from "@/lib/prismaClient";
 import { downloadFile } from "@/lib/fileStorage";
@@ -11,6 +12,7 @@ import {
   getMasterKey,
 } from "@/lib/fileEncryption";
 import { verifyFileHash } from "@/lib/fileHashing";
+import { fileDownloadsTotal } from "@/lib/metrics";
 
 export async function GET(
   request: NextRequest,
@@ -38,17 +40,44 @@ export async function GET(
       return NextResponse.json({ message: "File not found." }, { status: 404 });
     }
 
-    // Check permissions
-    const hasPermission = await canViewFile(userId, id);
-    if (!hasPermission) {
-      await logFileEvent("FILE_DOWNLOADED", false, request, userId, id, {
-        error: "Permission denied",
-      });
+    // Check if user is the owner
+    const isOwner = file.userId === userId;
 
-      return NextResponse.json(
-        { message: "Permission denied." },
-        { status: 403 },
-      );
+    // If not owner, check if file is shared with user
+    let sharePermission: "READ" | "READ_WRITE" | null = null;
+    if (!isOwner) {
+      sharePermission = await checkSharePermission(userId, id);
+      if (!sharePermission) {
+        // Check if user can view file (might be shared via other means)
+        const hasPermission = await canViewFile(userId, id);
+        if (!hasPermission) {
+          await logFileEvent("FILE_DOWNLOADED", false, request, userId, id, {
+            error: "Permission denied",
+          });
+
+          return NextResponse.json(
+            { message: "Permission denied." },
+            { status: 403 },
+          );
+        }
+      } else {
+        // File is shared - check if download is allowed
+        // READ permission doesn't allow downloads
+        if (sharePermission === "READ") {
+          await logFileEvent("FILE_DOWNLOADED", false, request, userId, id, {
+            error: "Download not allowed for READ permission",
+            permission: sharePermission,
+          });
+
+          return NextResponse.json(
+            {
+              message:
+                "Download is not allowed. This file is shared with READ permission only.",
+            },
+            { status: 403 },
+          );
+        }
+      }
     }
 
     // Download encrypted file from storage
@@ -81,13 +110,14 @@ export async function GET(
     }
 
     // Log successful download
+    fileDownloadsTotal.inc({ success: "true" });
     await logFileEvent("FILE_DOWNLOADED", true, request, userId, id, {
       fileName: file.name,
       size: file.size,
     });
 
-    // Return file as response
-    return new NextResponse(decryptedBuffer, {
+    // Return file as response (convert Buffer to Uint8Array for NextResponse)
+    return new NextResponse(new Uint8Array(decryptedBuffer), {
       status: 200,
       headers: {
         "Content-Type": file.mimeType,
@@ -98,6 +128,7 @@ export async function GET(
   } catch (error) {
     console.error("File download error:", error);
 
+    fileDownloadsTotal.inc({ success: "false" });
     await logFileEvent("FILE_DOWNLOADED", false, request, userId, id, {
       error: error instanceof Error ? error.message : String(error),
     });
